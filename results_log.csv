@@ -1,0 +1,9 @@
+date,game,market,side,bet_label,odds,model_prob,edge_pct,confidence,outcome,pnl,actual_home_goals,actual_away_goals
+2026-03-28,FLA @ NYI,ML,away,Florida Panthers ML,155,0.4775,10.22,75,LOSS,-100.0,5,2
+2026-03-28,FLA @ NYI,PL,away,Florida Panthers +1.5 (Puck Line),-176,0.7849,17.81,70,LOSS,-100.0,5,2
+2026-03-28,OTT @ TBL,PL,away,Ottawa Senators +1.5 (Puck Line),-188,0.757,13.5,67,LOSS,-100.0,4,2
+2026-03-28,ANA @ EDM,OU,under,UNDER 7.0 (Edmonton Oilers vs Anaheim Ducks),126,0.5126,9.07,60,WIN,126.0,4,2
+2026-03-28,FLA @ NYI,OU,over,OVER 5.5 (New York Islanders vs Florida Panthers),-115,0.5892,7.83,75,WIN,86.96,5,2
+2026-03-28,ANA @ EDM,ML,away,Anaheim Ducks ML,118,0.5117,7.29,60,LOSS,-100.0,4,2
+2026-03-28,ANA @ EDM,PL,home,Edmonton Oilers -1.5 (Puck Line),164,0.4148,5.44,60,WIN,164.0,4,2
+2026-03-28,OTT @ TBL,ML,away,Ottawa Senators ML,134,0.4596,5.09,70,LOSS,-100.0,4,2

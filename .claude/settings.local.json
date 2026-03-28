@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip --version)",
+      "Bash(pip list:*)",
+      "Bash(python:*)",
+      "WebFetch(domain:the-odds-api.com)",
+      "WebFetch(domain:api-web.nhle.com)",
+      "WebFetch(domain:api.nhle.com)",
+      "WebFetch(domain:docs.the-odds-api.com)",
+      "WebFetch(domain:api.the-odds-api.com)",
+      "Bash(pip install:*)",
+      "Bash(python3:*)"
+    ]
+  }
+}
