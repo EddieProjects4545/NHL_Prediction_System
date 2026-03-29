@@ -269,3 +269,39 @@ def track_results(rec_date: Optional[str] = None) -> None:
         print(Fore.WHITE + f"  Appended {len(tracked_rows)} records → {log_path}")
 
     print()
+
+
+def track_and_update_excel(rec_date: Optional[str] = None,
+                            output_dir: Optional[str] = None) -> None:
+    """
+    Run the normal CSV-based results tracking, then write results back into
+    the Excel predictions workbook for rec_date (if it exists).
+    """
+    if rec_date is None:
+        rec_date = (date.today() - timedelta(days=1)).isoformat()
+
+    # Run existing terminal / CSV tracking
+    track_results(rec_date)
+
+    # Write back into Excel workbook
+    scores = get_scores_for_date(rec_date)
+    if not scores:
+        return
+
+    completed = []
+    for score_key, score in scores.items():
+        parts = score_key.split("@")
+        if len(parts) != 2:
+            continue
+        away_abbr, home_abbr = parts[0], parts[1]
+        completed.append({
+            "home_name":  home_abbr,
+            "away_name":  away_abbr,
+            "home_score": score.get("home_goals", 0),
+            "away_score": score.get("away_goals", 0),
+        })
+
+    if completed:
+        from output.excel_writer import write_results_to_workbook
+        write_results_to_workbook(rec_date, completed, output_dir)
+        print(Fore.GREEN + f"  Excel write-back complete: predictions_{rec_date}.xlsx\n")

@@ -10,7 +10,10 @@
       "WebFetch(domain:docs.the-odds-api.com)",
       "WebFetch(domain:api.the-odds-api.com)",
       "Bash(pip install:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(git --version)",
+      "Bash(gh --version)",
+      "Bash(gh auth:*)"
     ]
   }
 }

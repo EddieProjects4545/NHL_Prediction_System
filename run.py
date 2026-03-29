@@ -11,7 +11,8 @@ Usage
   python run.py --market ml              # Only ML recommendations
   python run.py --market pl              # Only Puck Line recommendations
   python run.py --market ou              # Only Over/Under recommendations
-  python run.py --export json            # Export as JSON instead of CSV
+  python run.py --export csv             # Export as CSV instead of Excel (default is Excel)
+  python run.py --export json            # Export as JSON
   python run.py --playoff                # Playoff mode
   python run.py --summary                # Show model summary only
 """
@@ -50,9 +51,9 @@ def parse_args():
     p.add_argument("--market",    type=str, default="all",
                    choices=["all", "ml", "pl", "ou"],
                    help="Filter to a specific market")
-    p.add_argument("--export",    type=str, default="csv",
-                   choices=["csv", "json", "none"],
-                   help="Export format")
+    p.add_argument("--export",    type=str, default="excel",
+                   choices=["csv", "json", "excel", "none"],
+                   help="Export format (default: excel)")
     p.add_argument("--playoff",   action="store_true",
                    help="Playoff mode (different K-factor, context features)")
     p.add_argument("--summary",   action="store_true",
@@ -82,8 +83,12 @@ def main():
 
     # ── Results tracking (early exit — no model needed) ───────────────────────
     if args.track:
-        from output.results_tracker import track_results
-        track_results(game_date)
+        if args.export == "excel":
+            from output.results_tracker import track_and_update_excel
+            track_and_update_excel(game_date)
+        else:
+            from output.results_tracker import track_results
+            track_results(game_date)
         return
 
     # ── 1. Fetch Schedule ──────────────────────────────────────────────────────
@@ -264,11 +269,27 @@ def main():
                           goalie_feats, confirmed)
 
     # ── Export ────────────────────────────────────────────────────────────────
-    if recs and args.export != "none":
-        if args.export == "csv":
+    if args.export != "none":
+        from colorama import Fore
+        if args.export == "excel":
+            from output.export import export_excel
+            path = export_excel(
+                recs         = recs,
+                upcoming     = upcoming,
+                ensemble_probs = ensemble_probs,
+                mu_home      = mu_home,
+                mu_away      = mu_away,
+                goalie_feats = goalie_feats,
+                game_date    = game_date,
+            )
+            from output.excel_writer import _conf_tier
+            n_high = sum(1 for r in recs if _conf_tier(r.model_prob, r.edge_pct) == "HIGH")
+            n_med  = sum(1 for r in recs if _conf_tier(r.model_prob, r.edge_pct) == "MEDIUM")
+            print(Fore.WHITE + f"  Exported to: {path}")
+            print(Fore.GREEN + f"  Picks: {n_high} HIGH | {n_med} MEDIUM confidence\n")
+        elif args.export == "csv":
             from output.export import export_csv
             path = export_csv(recs)
-            from colorama import Fore
             print(Fore.WHITE + f"  Exported to: {path}\n")
         elif args.export == "json":
             from output.export import export_json
