@@ -13,7 +13,18 @@
       "Bash(python3:*)",
       "Bash(git --version)",
       "Bash(gh --version)",
-      "Bash(gh auth:*)"
+      "Bash(gh auth:*)",
+      "Bash(ls -la /c/Users/Eddie/OneDrive/Desktop/NHL_System/output/*.csv)",
+      "Bash(grep -E \"\\\\.\\(csv|xlsx|json\\)$\")",
+      "Bash(python -c \":*)",
+      "mcp__plugin_context-mode_context-mode__ctx_stats",
+      "mcp__plugin_context-mode_context-mode__ctx_execute",
+      "mcp__plugin_context-mode_context-mode__ctx_search",
+      "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
+      "Bash(mkdir -p outputs)",
+      "Bash(mv predictions_*.xlsx season_record.xlsx results_log.csv outputs/)",
+      "Bash(ls:*)",
+      "Bash(echo \"$PATH\")"
     ]
   }
 }

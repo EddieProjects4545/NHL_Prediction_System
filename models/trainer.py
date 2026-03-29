@@ -159,8 +159,15 @@ def train_all_models(
     y_tr, y_va = y_ml.iloc[:split_idx], y_ml.iloc[split_idx:]
     sw_tr      = sw[:split_idx]
 
+    # Class imbalance: compute ratio of away wins to home wins
+    n_pos = int(y_tr.sum())
+    n_neg = len(y_tr) - n_pos
+    scale_pos_weight = round(n_neg / max(n_pos, 1), 3)
+    print(f"  Class balance: {n_pos} home wins / {n_neg} away wins → scale_pos_weight={scale_pos_weight:.3f}")
+
     ensemble = EnsembleModel()
-    ensemble.fit(X_tr, y_tr, sample_weight=sw_tr, X_val=X_va, y_val=y_va)
+    ensemble.fit(X_tr, y_tr, sample_weight=sw_tr, X_val=X_va, y_val=y_va,
+                 scale_pos_weight=scale_pos_weight)
 
     # CV metrics
     print("  Running cross-validation...")
@@ -184,7 +191,10 @@ def train_all_models(
           f"Acc: {val_metrics['ensemble_val_accuracy']:.4f}")
 
     # Refit on all data
-    ensemble.fit(X, y_ml, sample_weight=sw)
+    n_pos_all = int(y_ml.sum())
+    n_neg_all = len(y_ml) - n_pos_all
+    spw_all = round(n_neg_all / max(n_pos_all, 1), 3)
+    ensemble.fit(X, y_ml, sample_weight=sw, scale_pos_weight=spw_all)
 
     # ── Puck Line ──────────────────────────────────────────────────────────────
     print("\n[2/3] Training Puck Line Model...")

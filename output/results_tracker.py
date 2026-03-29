@@ -15,6 +15,9 @@ import os
 from datetime import date, timedelta
 from typing import Dict, List, Optional
 
+import openpyxl
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from colorama import Fore, Style
 
 from config import OUTPUT_DIR
@@ -81,8 +84,8 @@ def determine_outcome(rec: Dict, score: Dict) -> str:
     return "UNKNOWN"
 
 
-def calc_pnl(outcome: str, odds: int, unit: float = 100.0) -> float:
-    """Return P&L in dollars for a $unit bet at American odds."""
+def calc_pnl(outcome: str, odds: int, unit: float = 1.0) -> float:
+    """Return P&L in units for a 1u bet at American odds."""
     if outcome == "WIN":
         if odds > 0:
             return round(unit * odds / 100, 2)
@@ -109,7 +112,7 @@ def get_scores_for_date(game_date: str) -> Dict[str, Dict]:
     return index
 
 
-# ─── CSV helpers ──────────────────────────────────────────────────────────────
+# ─── File helpers ─────────────────────────────────────────────────────────────
 
 def load_recommendations(rec_date: str) -> List[Dict]:
     """Load the recommendations CSV for a given date."""
@@ -120,21 +123,149 @@ def load_recommendations(rec_date: str) -> List[Dict]:
         return list(csv.DictReader(f))
 
 
+# Column layout for results log: (header, width, dict_key)
+_LOG_COLS = [
+    ("DATE",      12, "date"),
+    ("GAME",      22, "game"),
+    ("TYPE",       8, "market"),
+    ("BET",       30, "bet_label"),
+    ("ODDS",       8, "odds"),
+    ("EDGE%",      8, "edge_pct"),
+    ("CONF",       7, "confidence"),
+    ("RESULT",     9, "outcome"),
+    ("UNITS",      7, "units"),
+    ("P&L",        9, "pnl"),
+    ("HOME SCR",   9, "actual_home_goals"),
+    ("AWAY SCR",   9, "actual_away_goals"),
+]
+
+_TITLE_FILL  = PatternFill(fill_type="solid", fgColor="1F4E79")
+_HEADER_FILL = PatternFill(fill_type="solid", fgColor="2F75B6")
+_WIN_FILL    = PatternFill(fill_type="solid", fgColor="C6EFCE")
+_LOSS_FILL   = PatternFill(fill_type="solid", fgColor="FFCCCC")
+_PUSH_FILL   = PatternFill(fill_type="solid", fgColor="FFEB9C")
+_ALT_FILL    = PatternFill(fill_type="solid", fgColor="F2F2F2")
+
+_TITLE_FONT  = Font(bold=True, color="FFFFFF", size=13)
+_HEADER_FONT = Font(bold=True, color="FFFFFF", size=10)
+_WIN_FONT    = Font(bold=True, color="006100", size=10)
+_LOSS_FONT   = Font(bold=True, color="9C0006", size=10)
+_PUSH_FONT   = Font(bold=True, color="7D6608", size=10)
+_BODY_FONT   = Font(color="000000", size=10)
+
+
+def _fmt_log_value(key: str, val) -> str:
+    """Format a cell value for the results log."""
+    if val is None or val == "":
+        return ""
+    if key == "edge_pct":
+        try: return f"{float(val):+.1f}%"
+        except: pass
+    elif key == "pnl":
+        try: return f"{float(val):+.2f}u"
+        except: pass
+    elif key == "odds":
+        try:
+            v = int(val)
+            return f"+{v}" if v > 0 else str(v)
+        except: pass
+    elif key == "units":
+        try: return f"{float(val):.1f}u"
+        except: pass
+    return str(val)
+
+
+def _migrate_csv_to_excel(ws, next_row: int) -> int:
+    """If a legacy results_log.csv exists, import its rows into ws."""
+    csv_path = os.path.join(OUTPUT_DIR, "results_log.csv")
+    if not os.path.exists(csv_path):
+        return next_row
+    key_map = {h: k for h, _, k in _LOG_COLS}
+    col_keys = [k for _, _, k in _LOG_COLS]
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                outcome = str(row.get("outcome", "")).upper()
+                fill, font = _row_style(outcome)
+                for col_i, key in enumerate(col_keys, start=1):
+                    raw = row.get(key, "")
+                    cell = ws.cell(row=next_row, column=col_i,
+                                   value=_fmt_log_value(key, raw))
+                    cell.fill = fill
+                    cell.font = font
+                    cell.alignment = Alignment(
+                        horizontal="left" if col_i == 4 else "center",
+                        vertical="center")
+                ws.row_dimensions[next_row].height = 16
+                next_row += 1
+    except Exception:
+        pass
+    return next_row
+
+
+def _row_style(outcome: str):
+    outcome = outcome.upper()
+    if outcome == "WIN":
+        return _WIN_FILL, _WIN_FONT
+    elif outcome == "LOSS":
+        return _LOSS_FILL, _LOSS_FONT
+    elif outcome == "PUSH":
+        return _PUSH_FILL, _PUSH_FONT
+    return _ALT_FILL, _BODY_FONT
+
+
 def append_results_log(rows: List[Dict]) -> str:
-    """Append tracked outcomes to results_log.csv. Returns path."""
-    path = os.path.join(OUTPUT_DIR, "results_log.csv")
-    fieldnames = [
-        "date", "game", "market", "side", "bet_label",
-        "odds", "model_prob", "edge_pct", "confidence",
-        "outcome", "pnl",
-        "actual_home_goals", "actual_away_goals",
-    ]
-    write_header = not os.path.exists(path)
-    with open(path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if write_header:
-            writer.writeheader()
-        writer.writerows(rows)
+    """Append tracked outcomes to results_log.xlsx. Returns path."""
+    path = os.path.join(OUTPUT_DIR, "results_log.xlsx")
+    n_cols = len(_LOG_COLS)
+
+    if os.path.exists(path):
+        wb = openpyxl.load_workbook(path)
+        ws = wb.active
+        next_row = ws.max_row + 1
+    else:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Results Log"
+
+        # Title row
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+        tc = ws.cell(row=1, column=1, value="NHL Betting — Results Log")
+        tc.fill = _TITLE_FILL
+        tc.font = _TITLE_FONT
+        tc.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 26
+
+        # Header row
+        for col_i, (header, width, _) in enumerate(_LOG_COLS, start=1):
+            hc = ws.cell(row=2, column=col_i, value=header)
+            hc.fill = _HEADER_FILL
+            hc.font = _HEADER_FONT
+            hc.alignment = Alignment(horizontal="center", vertical="center")
+            ws.column_dimensions[get_column_letter(col_i)].width = width
+        ws.row_dimensions[2].height = 18
+        ws.freeze_panes = "A3"
+
+        next_row = _migrate_csv_to_excel(ws, 3)
+
+    col_keys = [k for _, _, k in _LOG_COLS]
+    for row_data in rows:
+        outcome = str(row_data.get("outcome", "")).upper()
+        fill, font = _row_style(outcome)
+        for col_i, key in enumerate(col_keys, start=1):
+            raw = row_data.get(key, "")
+            cell = ws.cell(row=next_row, column=col_i,
+                           value=_fmt_log_value(key, raw))
+            cell.fill = fill
+            cell.font = font
+            cell.alignment = Alignment(
+                horizontal="left" if col_i == 4 else "center",
+                vertical="center")
+        ws.row_dimensions[next_row].height = 16
+        next_row += 1
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    wb.save(path)
     return path
 
 
@@ -199,7 +330,7 @@ def track_results(rec_date: Optional[str] = None) -> None:
 
         pnl = calc_pnl(outcome, odds)
         total_pnl += pnl
-        total_bet += 100.0
+        total_bet += 1.0
 
         if outcome == "WIN":
             wins += 1
@@ -222,7 +353,7 @@ def track_results(rec_date: Optional[str] = None) -> None:
         print(
             Fore.WHITE + f"  #{rank:<3} {bet_lbl:<35} {odds_str:>6} " +
             result_color + f"{outcome:>6}" +
-            (Fore.GREEN if pnl >= 0 else Fore.RED) + f" ${pnl_str:>8}"
+            (Fore.GREEN if pnl >= 0 else Fore.RED) + f" {pnl_str:>8}u"
         )
 
         tracked_rows.append({
@@ -236,6 +367,7 @@ def track_results(rec_date: Optional[str] = None) -> None:
             "edge_pct"          : rec.get("edge_pct", ""),
             "confidence"        : rec.get("confidence", ""),
             "outcome"           : outcome,
+            "units"             : 1.0,
             "pnl"               : pnl,
             "actual_home_goals" : score["home_goals"],
             "actual_away_goals" : score["away_goals"],
@@ -260,7 +392,7 @@ def track_results(rec_date: Optional[str] = None) -> None:
     )
     print(
         pnl_color + Style.BRIGHT +
-        f"  P&L (@ $100/bet): ${total_pnl:+.2f}  |  "
+        f"  P&L (@ 1u/bet): {total_pnl:+.2f}u  |  "
         f"ROI: {roi:+.1f}%  |  Win rate: {acc:.1f}%"
     )
 

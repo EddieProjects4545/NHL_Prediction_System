@@ -148,9 +148,9 @@ def print_recommendation(rank: int, rec: Recommendation) -> None:
     if rec.conf_factors:
         print(Fore.WHITE + f"  Flags:  " + ", ".join(rec.conf_factors))
 
-    # ── Kelly sizing ──────────────────────────────────────────────────────────
+    # ── Unit sizing ───────────────────────────────────────────────────────────
     print(Fore.WHITE + Style.BRIGHT +
-          f"  Size:   {rec.kelly_pct:.1f}% of bankroll (quarter-Kelly)")
+          f"  Size:   1u")
 
     print(Fore.WHITE + "  " + "─" * 61)
 

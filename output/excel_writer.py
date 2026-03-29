@@ -74,18 +74,18 @@ COL_MODEL    = 5
 COL_MARKET   = 6
 COL_EDGE     = 7
 COL_EV       = 8
-COL_KELLY    = 9
+COL_UNITS_COL = 9
 COL_RESULT   = 10
 
 _SUBHEADER_LABELS = [
     "BET TYPE", "PICK", "CONF", "ODDS",
-    "MODEL%", "MARKET%", "EDGE", "EV%", "KELLY%", "RESULT",
+    "MODEL%", "MARKET%", "EDGE", "EV%", "SIZE", "RESULT",
 ]
 _COL_WIDTHS = [16, 26, 9, 9, 9, 9, 9, 9, 9, 10]
 
 # Right-side summary panel
 _SUMMARY_START_COL = 12   # column L
-_SUMMARY_HEADERS   = ["GAME", "TYPE", "PICK", "ODDS", "EDGE", "KELLY%", "RESULT", "UNITS"]
+_SUMMARY_HEADERS   = ["GAME", "TYPE", "PICK", "ODDS", "EDGE", "SIZE", "RESULT", "UNITS"]
 _SUMMARY_WIDTHS    = [26, 8, 24, 8, 8, 8, 9, 9]
 
 SUMMARY_HIGH_FILL = PatternFill(fill_type="solid", fgColor="1A6B2A")   # dark green
@@ -152,7 +152,7 @@ def build_daily_workbook(date_str: str, game_results: List[dict]) -> openpyxl.Wo
 
     _write_confidence_summary(ws, game_results)
 
-    build_record_sheet(wb, OUTPUT_DIR)
+    build_record_sheet(wb, OUTPUT_DIR, skip_date=date_str)
 
     return wb
 
@@ -357,10 +357,13 @@ def write_results_to_workbook(date_str: str,
 # Public: record sheet (embedded in each daily workbook)
 # ---------------------------------------------------------------------------
 
-def build_record_sheet(wb: openpyxl.Workbook, outputs_dir: str = None) -> None:
+def build_record_sheet(wb: openpyxl.Workbook, outputs_dir: str = None,
+                       skip_date: str = None) -> None:
     """
     Scan all predictions_*.xlsx files in outputs_dir, tally WIN/LOSS/PUSH
     from each bet row, and write/replace a 'Model Record' sheet in wb.
+    skip_date: date string (e.g. '2026-03-29') — skip that file to avoid
+               Windows file-handle conflicts when the workbook is being built.
     """
     if "Model Record" in wb.sheetnames:
         del wb["Model Record"]
@@ -379,44 +382,49 @@ def build_record_sheet(wb: openpyxl.Workbook, outputs_dir: str = None) -> None:
     }
 
     out_dir = outputs_dir or OUTPUT_DIR
+    skip_fname = f"predictions_{skip_date}.xlsx" if skip_date else None
     xlsx_files = []
     if os.path.isdir(out_dir):
         for f in sorted(os.listdir(out_dir)):
             if f.startswith("predictions_") and f.endswith(".xlsx"):
+                if f == skip_fname:
+                    continue
                 xlsx_files.append(os.path.join(out_dir, f))
 
     scanned = 0
     for fpath in xlsx_files:
+        file_wb = None
         try:
             file_wb = openpyxl.load_workbook(fpath, read_only=True, data_only=True)
             file_ws = file_wb.active
+
+            for row in file_ws.iter_rows(min_col=1, max_col=TOTAL_COLS):
+                bet_label = row[COL_BET_TYPE - 1].value
+                if bet_label not in bet_type_map:
+                    continue
+                bet_key = bet_type_map[bet_label]
+                conf    = str(row[COL_CONF   - 1].value or "").upper()
+                result  = str(row[COL_RESULT - 1].value or "").upper()
+
+                if result == "WIN":
+                    tally["all"][bet_key][0] += 1
+                    if conf == "HIGH":
+                        tally["high"][bet_key][0] += 1
+                elif result == "LOSS":
+                    tally["all"][bet_key][1] += 1
+                    if conf == "HIGH":
+                        tally["high"][bet_key][1] += 1
+                elif result == "PUSH":
+                    tally["all"][bet_key][2] += 1
+                    if conf == "HIGH":
+                        tally["high"][bet_key][2] += 1
+
+            scanned += 1
         except Exception as e:
-            logger.warning("Could not open %s: %s", fpath, e)
-            continue
-
-        for row in file_ws.iter_rows(min_col=1, max_col=TOTAL_COLS):
-            bet_label = row[COL_BET_TYPE - 1].value
-            if bet_label not in bet_type_map:
-                continue
-            bet_key = bet_type_map[bet_label]
-            conf    = str(row[COL_CONF   - 1].value or "").upper()
-            result  = str(row[COL_RESULT - 1].value or "").upper()
-
-            if result == "WIN":
-                tally["all"][bet_key][0] += 1
-                if conf == "HIGH":
-                    tally["high"][bet_key][0] += 1
-            elif result == "LOSS":
-                tally["all"][bet_key][1] += 1
-                if conf == "HIGH":
-                    tally["high"][bet_key][1] += 1
-            elif result == "PUSH":
-                tally["all"][bet_key][2] += 1
-                if conf == "HIGH":
-                    tally["high"][bet_key][2] += 1
-
-        file_wb.close()
-        scanned += 1
+            logger.warning("Could not scan %s: %s", fpath, e)
+        finally:
+            if file_wb is not None:
+                file_wb.close()
 
     _write_record_sheet(rs, tally, scanned)
 
@@ -722,7 +730,7 @@ def _write_bet_row(ws, row_idx: int, label: str, rec: Optional[dict]) -> None:
     """Write a single ML / PL / OU data row. rec=None → empty data cells."""
     if rec:
         tier      = _conf_tier(rec.get("model_prob", 0.0), rec.get("edge_pct", 0.0))
-        kelly_str = f"{rec['kelly_pct']:.1f}%" if rec.get("kelly_pct", 0) > 0 else "\u2014"
+        kelly_str = "1u"
         values = [
             label,
             rec.get("pick", ""),
@@ -804,7 +812,7 @@ def _write_confidence_summary(ws, game_results: List[dict]) -> None:
 
     def _write_pick_row(row: int, game_label: str, type_label: str,
                         rec: dict, row_fill) -> None:
-        kelly_str = f"{rec['kelly_pct']:.1f}%" if rec.get("kelly_pct", 0) > 0 else "\u2014"
+        kelly_str = "1u"
         values = [
             game_label,
             type_label,

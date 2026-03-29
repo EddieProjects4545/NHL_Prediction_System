@@ -37,8 +37,8 @@ ELO_HOME_BONUS    = 35.0   # Added to home team before probability calculation
 ELO_RESET_FACTOR  = 0.35   # Pull ratings toward 1500 at season start (regression)
 
 # ─── Training ─────────────────────────────────────────────────────────────────
-TIME_DECAY_LAMBDA   = 0.003   # exp(-λ·days_ago); 180d ago → ~58% weight
-PREV_SEASON_WEIGHT  = 0.55    # Additional multiplier for prior-season games
+TIME_DECAY_LAMBDA   = 0.008   # exp(-λ·days_ago); 180d ago → ~23% weight
+PREV_SEASON_WEIGHT  = 0.35    # Additional multiplier for prior-season games
 ROLLING_WINDOWS     = [5, 10, 20]
 MIN_GAMES_FOR_FEAT  = 5       # Games needed before rolling features are meaningful
 CV_SPLITS           = 5       # TimeSeriesSplit folds
@@ -97,7 +97,7 @@ KELLY_FRACTION  = 0.25    # Quarter-Kelly sizing
 CACHE_DIR           = "cache"
 CACHE_TTL_SECONDS   = 3600   # 1 hour
 SAVED_MODELS_DIR    = "saved_models"
-OUTPUT_DIR          = "."    # Recommendations CSV written here
+OUTPUT_DIR          = "./outputs"    # Recommendations CSV written here
 
 # ─── All 32 NHL Team Abbreviations (canonical NHL API format) ─────────────────
 TEAM_ABBREVS = [

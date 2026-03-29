@@ -39,12 +39,15 @@ class EnsembleModel:
     def fit(self, X: pd.DataFrame, y: pd.Series,
             sample_weight: np.ndarray = None,
             X_val: pd.DataFrame = None,
-            y_val: pd.Series = None) -> "EnsembleModel":
+            y_val: pd.Series = None,
+            scale_pos_weight: float = None) -> "EnsembleModel":
         print("  Training Logistic Regression...")
-        self.logistic.fit(X, y)
+        self.logistic.fit(X, y, sample_weight=sample_weight,
+                          X_val=X_val, y_val=y_val)
         print("  Training XGBoost...")
         self.xgboost.fit(X, y, X_val=X_val, y_val=y_val,
-                         sample_weight=sample_weight)
+                         sample_weight=sample_weight,
+                         scale_pos_weight=scale_pos_weight)
         print("  Fitting Elo model...")
         self.elo.fit(X, y)
         self.is_fitted = True

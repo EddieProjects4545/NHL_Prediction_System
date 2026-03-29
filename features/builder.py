@@ -170,6 +170,28 @@ def build_game_feature_vector(
             h_form.get("is_back_to_back", 0) and
             a_form.get("is_back_to_back", 0)
         ),
+        # ── Rest asymmetry (road B2B hurts more than home B2B) ────────────────
+        "home_b2b_away_fresh": int(
+            h_form.get("is_back_to_back", 0) == 1 and
+            a_form.get("is_back_to_back", 0) == 0
+        ),
+        "away_b2b_home_fresh": int(
+            a_form.get("is_back_to_back", 0) == 1 and
+            h_form.get("is_back_to_back", 0) == 0
+        ),
+        "rest_advantage"    : int(h_form.get("days_rest", 3)) - int(a_form.get("days_rest", 3)),
+        # ── Starter confirmation interaction ──────────────────────────────────
+        # Penalises goalie edge when starter identity is unconfirmed
+        "h_gsax_confirmed"  : round(
+            h_goalie.get("starter_gsax_pg", 0) * h_goalie.get("starter_confirmed", 1), 4
+        ),
+        "a_gsax_confirmed"  : round(
+            a_goalie.get("starter_gsax_pg", 0) * a_goalie.get("starter_confirmed", 1), 4
+        ),
+        "starter_conf_sv_delta": round(
+            h_goalie.get("starter_save_pct", 0.900) * h_goalie.get("starter_confirmed", 1) -
+            a_goalie.get("starter_save_pct", 0.900) * a_goalie.get("starter_confirmed", 1), 4
+        ),
     }
 
     # Drop string columns (goalie names, streak codes)

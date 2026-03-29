@@ -24,10 +24,14 @@ class XGBoostModel:
     def fit(self, X: pd.DataFrame, y: pd.Series,
             X_val: pd.DataFrame = None, y_val: pd.Series = None,
             calibrate: bool = True,
-            sample_weight: np.ndarray = None) -> "XGBoostModel":
+            sample_weight: np.ndarray = None,
+            scale_pos_weight: float = None) -> "XGBoostModel":
         self.feature_names = list(X.columns)
         X_arr = X.values
         y_arr = y.values
+
+        if scale_pos_weight is not None:
+            self.model.set_params(scale_pos_weight=scale_pos_weight)
 
         fit_kwargs = {}
         if sample_weight is not None:

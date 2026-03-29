@@ -26,15 +26,30 @@ class LogisticModel:
         self.is_fitted = False
 
     def fit(self, X: pd.DataFrame, y: pd.Series,
+            sample_weight: np.ndarray = None,
+            X_val: pd.DataFrame = None,
+            y_val: pd.Series = None,
             calibrate: bool = True) -> "LogisticModel":
         self.feature_names = list(X.columns)
         if calibrate:
-            base = Pipeline([
-                ("scaler", StandardScaler()),
-                ("clf", LogisticRegression(**LOGISTIC_PARAMS)),
-            ])
-            self.calibrated = CalibratedClassifierCV(base, cv=5, method="isotonic")
-            self.calibrated.fit(X.values, y.values)
+            if X_val is not None and y_val is not None:
+                # Fit on training data, calibrate on held-out val set — no leakage
+                self.pipeline.fit(X.values, y.values)
+                self.calibrated = CalibratedClassifierCV(
+                    self.pipeline, cv="prefit", method="isotonic"
+                )
+                self.calibrated.fit(
+                    X_val[self.feature_names].fillna(0).values,
+                    y_val.values,
+                )
+            else:
+                base = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("clf", LogisticRegression(**LOGISTIC_PARAMS)),
+                ])
+                self.calibrated = CalibratedClassifierCV(base, cv=3, method="isotonic")
+                sw_kw = {"sample_weight": sample_weight} if sample_weight is not None else {}
+                self.calibrated.fit(X.values, y.values, **sw_kw)
         else:
             self.pipeline.fit(X.values, y.values)
         self.is_fitted = True

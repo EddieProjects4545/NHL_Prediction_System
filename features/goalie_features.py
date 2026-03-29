@@ -89,6 +89,9 @@ def build_goalie_features(season: str = CURRENT_SEASON,
             "goalie_depth_diff"   : round(depth_diff, 4),
             "starter_workload_pct": round(workload_pct, 4),
             "starter_name"        : starter.get("name", ""),
+            # Default confirmed=1: season leader IS the primary starter for historical games.
+            # apply_confirmed_starters() overrides this with explicit 0/1 on game day.
+            "starter_confirmed"   : 1,
         }
 
     return result

@@ -37,7 +37,7 @@ class Recommendation:
     market_prob : float
     edge_pct    : float       # positive = value
     ev_pct      : float
-    kelly_pct   : float
+    units       : float       # unit stake (flat 1u)
     odds        : int
     book        : str
 
@@ -227,7 +227,7 @@ def generate_recommendations(
         ag = goalie_feats.get(away, {})
 
         def _add_rec(market, side, model_prob, market_prob, edge_pct,
-                     ev_pct, kelly_pct, odds, book,
+                     ev_pct, odds, book,
                      pl_line=None, ou_line_v=None):
             if odds is None:
                 return
@@ -254,7 +254,7 @@ def generate_recommendations(
                 market_prob  = round(market_prob, 4),
                 edge_pct     = round(edge_pct, 2),
                 ev_pct       = round(ev_pct, 2),
-                kelly_pct    = round(kelly_pct, 2),
+                units        = 1.0,
                 odds         = odds,
                 book         = book or "best",
                 pl_line      = pl_line,
@@ -283,10 +283,10 @@ def generate_recommendations(
             h = ml_analysis.get("home", {})
             a = ml_analysis.get("away", {})
             _add_rec("ML", "home", h["model_prob"], h["market_prob"],
-                     h["edge"], h["ev_pct"], h["kelly_pct"], h["odds"],
+                     h["edge"], h["ev_pct"], h["odds"],
                      (ml_data.get("home") or {}).get("book"))
             _add_rec("ML", "away", a["model_prob"], a["market_prob"],
-                     a["edge"], a["ev_pct"], a["kelly_pct"], a["odds"],
+                     a["edge"], a["ev_pct"], a["odds"],
                      (ml_data.get("away") or {}).get("book"))
 
         # ── Puck Line ─────────────────────────────────────────────────────────
@@ -299,10 +299,10 @@ def generate_recommendations(
             ph = pl_analysis.get("home_minus1_5", {})
             pa = pl_analysis.get("away_plus1_5",  {})
             _add_rec("PL", "home", ph["model_prob"], ph["market_prob"],
-                     ph["edge"], ph["ev_pct"], ph["kelly_pct"], ph["odds"],
+                     ph["edge"], ph["ev_pct"], ph["odds"],
                      (pl_data.get("home_minus1_5") or {}).get("book"), pl_line=-1.5)
             _add_rec("PL", "away", pa["model_prob"], pa["market_prob"],
-                     pa["edge"], pa["ev_pct"], pa["kelly_pct"], pa["odds"],
+                     pa["edge"], pa["ev_pct"], pa["odds"],
                      (pl_data.get("away_plus1_5") or {}).get("book"),  pl_line=+1.5)
 
         # ── Over / Under ──────────────────────────────────────────────────────
@@ -330,10 +330,10 @@ def generate_recommendations(
             ov = ou_analysis.get("over",  {})
             un = ou_analysis.get("under", {})
             _add_rec("OU", "over",  ov["model_prob"], ov["market_prob"],
-                     ov["edge"], ov["ev_pct"], ov["kelly_pct"], ov["odds"],
+                     ov["edge"], ov["ev_pct"], ov["odds"],
                      (ou_data.get("over")  or {}).get("book"), ou_line_v=ou_v)
             _add_rec("OU", "under", un["model_prob"], un["market_prob"],
-                     un["edge"], un["ev_pct"], un["kelly_pct"], un["odds"],
+                     un["edge"], un["ev_pct"], un["odds"],
                      (ou_data.get("under") or {}).get("book"), ou_line_v=ou_v)
 
     # Sort by rank_score descending
