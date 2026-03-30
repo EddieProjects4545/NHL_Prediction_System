@@ -151,7 +151,10 @@ def get_season_results(season: str = CURRENT_SEASON,
     else:
         start = PREV_SEASON_START
         end   = PREV_SEASON_END
-    return get_game_results_range(start, end, game_type)
+    results = get_game_results_range(start, end, game_type)
+    for row in results:
+        row["season"] = season
+    return results
 
 
 # ─── Standings ────────────────────────────────────────────────────────────────

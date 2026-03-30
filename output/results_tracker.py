@@ -139,19 +139,21 @@ _LOG_COLS = [
     ("AWAY SCR",   9, "actual_away_goals"),
 ]
 
-_TITLE_FILL  = PatternFill(fill_type="solid", fgColor="1F4E79")
-_HEADER_FILL = PatternFill(fill_type="solid", fgColor="2F75B6")
-_WIN_FILL    = PatternFill(fill_type="solid", fgColor="C6EFCE")
-_LOSS_FILL   = PatternFill(fill_type="solid", fgColor="FFCCCC")
-_PUSH_FILL   = PatternFill(fill_type="solid", fgColor="FFEB9C")
-_ALT_FILL    = PatternFill(fill_type="solid", fgColor="F2F2F2")
+_TITLE_FILL   = PatternFill(fill_type="solid", fgColor="1F4E79")
+_HEADER_FILL  = PatternFill(fill_type="solid", fgColor="2F75B6")
+_WIN_FILL     = PatternFill(fill_type="solid", fgColor="C6EFCE")
+_LOSS_FILL    = PatternFill(fill_type="solid", fgColor="FFCCCC")
+_PUSH_FILL    = PatternFill(fill_type="solid", fgColor="FFEB9C")
+_ALT_FILL     = PatternFill(fill_type="solid", fgColor="F2F2F2")
+_SUMMARY_FILL = PatternFill(fill_type="solid", fgColor="1F4E79")
 
-_TITLE_FONT  = Font(bold=True, color="FFFFFF", size=13)
-_HEADER_FONT = Font(bold=True, color="FFFFFF", size=10)
-_WIN_FONT    = Font(bold=True, color="006100", size=10)
-_LOSS_FONT   = Font(bold=True, color="9C0006", size=10)
-_PUSH_FONT   = Font(bold=True, color="7D6608", size=10)
-_BODY_FONT   = Font(color="000000", size=10)
+_TITLE_FONT   = Font(bold=True, color="FFFFFF", size=13)
+_HEADER_FONT  = Font(bold=True, color="FFFFFF", size=10)
+_WIN_FONT     = Font(bold=True, color="006100", size=10)
+_LOSS_FONT    = Font(bold=True, color="9C0006", size=10)
+_PUSH_FONT    = Font(bold=True, color="7D6608", size=10)
+_BODY_FONT    = Font(color="000000", size=10)
+_SUMMARY_FONT = Font(bold=True, color="FFFFFF", size=10)
 
 
 def _fmt_log_value(key: str, val) -> str:
@@ -214,6 +216,138 @@ def _row_style(outcome: str):
     return _ALT_FILL, _BODY_FONT
 
 
+_SUMMARY_SENTINEL = "SEASON TOTALS"
+
+
+def _strip_summary_row(ws) -> None:
+    """Remove the summary row if it exists (identified by sentinel in col A)."""
+    last = ws.max_row
+    if last >= 3 and ws.cell(row=last, column=1).value == _SUMMARY_SENTINEL:
+        ws.delete_rows(last)
+
+
+def _write_summary_row(ws, n_cols: int) -> None:
+    """Scan all data rows and write a running-total summary at the bottom."""
+    wins = losses = pushes = 0
+    total_pnl = 0.0
+    total_bets = 0
+
+    # Data starts at row 3 (row 1 = title, row 2 = header)
+    result_col = next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "outcome")
+    pnl_col    = next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "pnl")
+
+    for r in range(3, ws.max_row + 1):
+        result_val = str(ws.cell(row=r, column=result_col).value or "").upper()
+        pnl_raw    = str(ws.cell(row=r, column=pnl_col).value or "").replace("u", "").strip()
+        if result_val == "WIN":
+            wins += 1
+        elif result_val == "LOSS":
+            losses += 1
+        elif result_val == "PUSH":
+            pushes += 1
+        else:
+            continue
+        total_bets += 1
+        try:
+            total_pnl += float(pnl_raw)
+        except ValueError:
+            pass
+
+    decided = wins + losses
+    win_rate = (wins / decided * 100) if decided > 0 else 0.0
+    roi      = (total_pnl / total_bets * 100) if total_bets > 0 else 0.0
+    pnl_color = "00B050" if total_pnl >= 0 else "FF0000"
+
+    summary_row = ws.max_row + 1
+    ws.row_dimensions[summary_row].height = 18
+
+    # Merge cols 1-4 for label
+    ws.merge_cells(start_row=summary_row, start_column=1,
+                   end_row=summary_row, end_column=4)
+    label_cell = ws.cell(row=summary_row, column=1, value=_SUMMARY_SENTINEL)
+    label_cell.fill = _SUMMARY_FILL
+    label_cell.font = _SUMMARY_FONT
+    label_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Cols 5-7 blank with same fill
+    for c in range(5, 8):
+        cell = ws.cell(row=summary_row, column=c, value="")
+        cell.fill = _SUMMARY_FILL
+
+    # RESULT col: wins / losses / pushes
+    r_cell = ws.cell(row=summary_row, column=result_col,
+                     value=f"{wins}W / {losses}L / {pushes}P")
+    r_cell.fill  = _SUMMARY_FILL
+    r_cell.font  = _SUMMARY_FONT
+    r_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # UNITS col: total bets
+    units_col = next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "units")
+    u_cell = ws.cell(row=summary_row, column=units_col, value=f"{total_bets}u")
+    u_cell.fill  = _SUMMARY_FILL
+    u_cell.font  = _SUMMARY_FONT
+    u_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # P&L col
+    p_cell = ws.cell(row=summary_row, column=pnl_col,
+                     value=f"{total_pnl:+.2f}u")
+    p_cell.fill  = _SUMMARY_FILL
+    p_cell.font  = Font(bold=True, color=pnl_color, size=10)
+    p_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Win rate col (HOME SCR slot)
+    wr_col = next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "actual_home_goals")
+    wr_cell = ws.cell(row=summary_row, column=wr_col,
+                      value=f"W%: {win_rate:.1f}%")
+    wr_cell.fill  = _SUMMARY_FILL
+    wr_cell.font  = _SUMMARY_FONT
+    wr_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ROI col (AWAY SCR slot)
+    roi_col = next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "actual_away_goals")
+    roi_cell = ws.cell(row=summary_row, column=roi_col,
+                       value=f"ROI: {roi:+.1f}%")
+    roi_cell.fill  = _SUMMARY_FILL
+    roi_cell.font  = Font(bold=True, color=pnl_color, size=10)
+    roi_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+
+def _row_identity(row_data: Dict) -> tuple:
+    """Stable key for one tracked recommendation row."""
+    return (
+        str(row_data.get("date", "")),
+        str(row_data.get("game", "")),
+        str(row_data.get("market", "")),
+        str(row_data.get("bet_label", "")),
+        str(row_data.get("odds", "")),
+    )
+
+
+def _existing_row_keys(ws) -> set[tuple]:
+    """Read existing workbook rows into a set of identity tuples."""
+    key_cols = {
+        "date": next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "date"),
+        "game": next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "game"),
+        "market": next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "market"),
+        "bet_label": next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "bet_label"),
+        "odds": next(i for i, (_, _, k) in enumerate(_LOG_COLS, 1) if k == "odds"),
+    }
+    keys = set()
+    for r in range(3, ws.max_row + 1):
+        if ws.cell(row=r, column=1).value == _SUMMARY_SENTINEL:
+            continue
+        row_key = (
+            str(ws.cell(row=r, column=key_cols["date"]).value or "").strip(),
+            str(ws.cell(row=r, column=key_cols["game"]).value or "").strip(),
+            str(ws.cell(row=r, column=key_cols["market"]).value or "").strip(),
+            str(ws.cell(row=r, column=key_cols["bet_label"]).value or "").strip(),
+            str(ws.cell(row=r, column=key_cols["odds"]).value or "").strip(),
+        )
+        if any(row_key):
+            keys.add(row_key)
+    return keys
+
+
 def append_results_log(rows: List[Dict]) -> str:
     """Append tracked outcomes to results_log.xlsx. Returns path."""
     path = os.path.join(OUTPUT_DIR, "results_log.xlsx")
@@ -222,6 +356,7 @@ def append_results_log(rows: List[Dict]) -> str:
     if os.path.exists(path):
         wb = openpyxl.load_workbook(path)
         ws = wb.active
+        _strip_summary_row(ws)
         next_row = ws.max_row + 1
     else:
         wb = openpyxl.Workbook()
@@ -248,8 +383,13 @@ def append_results_log(rows: List[Dict]) -> str:
 
         next_row = _migrate_csv_to_excel(ws, 3)
 
+    existing_keys = _existing_row_keys(ws)
+
     col_keys = [k for _, _, k in _LOG_COLS]
     for row_data in rows:
+        row_key = _row_identity(row_data)
+        if row_key in existing_keys:
+            continue
         outcome = str(row_data.get("outcome", "")).upper()
         fill, font = _row_style(outcome)
         for col_i, key in enumerate(col_keys, start=1):
@@ -263,7 +403,9 @@ def append_results_log(rows: List[Dict]) -> str:
                 vertical="center")
         ws.row_dimensions[next_row].height = 16
         next_row += 1
+        existing_keys.add(row_key)
 
+    _write_summary_row(ws, n_cols)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     wb.save(path)
     return path
@@ -436,4 +578,4 @@ def track_and_update_excel(rec_date: Optional[str] = None,
     if completed:
         from output.excel_writer import write_results_to_workbook
         write_results_to_workbook(rec_date, completed, output_dir)
-        print(Fore.GREEN + f"  Excel write-back complete: predictions_{rec_date}.xlsx\n")
+        print(Fore.GREEN + f"  Excel write-back complete: nhl_predictions_{rec_date}.xlsx\n")

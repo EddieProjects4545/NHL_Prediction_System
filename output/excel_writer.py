@@ -167,7 +167,7 @@ def save_workbook(wb: openpyxl.Workbook, date_str: str,
     out_dir = output_dir or OUTPUT_DIR
     os.makedirs(out_dir, exist_ok=True)
 
-    path = os.path.join(out_dir, f"predictions_{date_str}.xlsx")
+    path = os.path.join(out_dir, f"nhl_predictions_{date_str}.xlsx")
 
     for attempt in range(1, 10):
         try:
@@ -176,7 +176,7 @@ def save_workbook(wb: openpyxl.Workbook, date_str: str,
             return path
         except PermissionError:
             suffix = f"_v{attempt + 1}"
-            path = os.path.join(out_dir, f"predictions_{date_str}{suffix}.xlsx")
+            path = os.path.join(out_dir, f"nhl_predictions_{date_str}{suffix}.xlsx")
             logger.warning("File locked — trying %s", path)
 
     logger.error("Could not save workbook after multiple attempts.")
@@ -198,7 +198,7 @@ def write_results_to_workbook(date_str: str,
         home_name (abbrev), away_name (abbrev), home_score (int), away_score (int)
     """
     out_dir = output_dir or OUTPUT_DIR
-    path = os.path.join(out_dir, f"predictions_{date_str}.xlsx")
+    path = os.path.join(out_dir, f"nhl_predictions_{date_str}.xlsx")
 
     if not os.path.exists(path):
         logger.warning("No predictions file found for %s — skipping result write-back.", date_str)
@@ -342,7 +342,7 @@ def write_results_to_workbook(date_str: str,
             logger.info("Results written to %s", path)
             break
         except PermissionError:
-            alt = os.path.join(out_dir, f"predictions_{date_str}_v{attempt + 1}.xlsx")
+            alt = os.path.join(out_dir, f"nhl_predictions_{date_str}_v{attempt + 1}.xlsx")
             logger.warning("File locked — saving to %s", alt)
             path = alt
     else:
@@ -382,11 +382,11 @@ def build_record_sheet(wb: openpyxl.Workbook, outputs_dir: str = None,
     }
 
     out_dir = outputs_dir or OUTPUT_DIR
-    skip_fname = f"predictions_{skip_date}.xlsx" if skip_date else None
+    skip_fname = f"nhl_predictions_{skip_date}.xlsx" if skip_date else None
     xlsx_files = []
     if os.path.isdir(out_dir):
         for f in sorted(os.listdir(out_dir)):
-            if f.startswith("predictions_") and f.endswith(".xlsx"):
+            if f.startswith("nhl_predictions_") and f.endswith(".xlsx"):
                 if f == skip_fname:
                     continue
                 xlsx_files.append(os.path.join(out_dir, f))
@@ -448,13 +448,13 @@ def build_season_record(outputs_dir: str = None) -> None:
     xlsx_files = []
     if os.path.isdir(out_dir):
         for f in sorted(os.listdir(out_dir)):
-            if (f.startswith("predictions_") and f.endswith(".xlsx")
+            if (f.startswith("nhl_predictions_") and f.endswith(".xlsx")
                     and "season_record" not in f):
                 xlsx_files.append(os.path.join(out_dir, f))
 
     for fpath in xlsx_files:
         try:
-            date_str = os.path.basename(fpath).replace("predictions_", "")[:10]
+            date_str = os.path.basename(fpath).replace("nhl_predictions_", "")[:10]
         except Exception:
             date_str = "unknown"
         try:

@@ -17,7 +17,7 @@ def build_team_stat_features(season: str = CURRENT_SEASON,
     Returns: {team_abbrev: {feature_name: value, ...}}
     """
     stats    = get_all_team_stats(season, game_type)
-    standings = parse_standings()
+    standings = parse_standings() if season == CURRENT_SEASON else {}
 
     merged: Dict[str, Dict] = {}
 

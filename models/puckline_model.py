@@ -23,6 +23,7 @@ Two separate models:
 """
 import joblib
 import os
+import re
 import numpy as np
 import pandas as pd
 from xgboost import XGBClassifier
@@ -44,24 +45,20 @@ PUCKLINE_FEATURES = [
     # Empty net
     "h_en_cover_proxy",
     # Possession / shot quality
-    "delta_corsi_pct_5v5",
-    "h_corsi_pct_5v5",       "a_corsi_pct_5v5",
-    "delta_fenwick_pct_5v5",
-    # Special teams
-    "delta_net_pp_advantage",
-    "h_pp_pct",              "a_pp_pct",
-    "h_pk_pct",              "a_pk_pct",
     # Scoring rates
     "delta_gf_pg",
+    "delta_goal_diff_pg",
+    "delta_goal_diff_l10",
+    "delta_shot_diff_pg",
+    "delta_shot_diff_l10",
     "h_gf_pg",               "a_ga_pg",
     "h_gf_ga_ratio",
-    # Goalie
-    "delta_starter_save_pct",
-    "h_starter_save_pct",    "a_starter_save_pct",
-    "h_starter_gsax_pg",     "a_starter_gsax_pg",
-    "delta_starter_l5_sv_pct",
-    "h_starter_l5_sv_pct",   "a_starter_l5_sv_pct",
-    "h_starter_l5_vs_season","a_starter_l5_vs_season",
+    "h_goal_diff_l10",       "a_goal_diff_l10",
+    "h_shot_diff_l10",       "a_shot_diff_l10",
+    "delta_save_pct_l10",
+    "delta_shooting_pct_l10",
+    "h_save_pct_l10",        "a_save_pct_l10",
+    "h_shooting_pct_l10",    "a_shooting_pct_l10",
     # H2H
     "h2h_cover_rate_minus1_5",
     "h2h_goal_diff_avg",
@@ -73,6 +70,9 @@ PUCKLINE_FEATURES = [
     # Form
     "delta_l10_win_pct",
     "delta_streak_value",
+    "delta_regulation_win_pct_l10",
+    "h_one_goal_rate_l10",   "a_one_goal_rate_l10",
+    "h_ot_rate_l10",         "a_ot_rate_l10",
     # Context
     "either_b2b",
     "h_is_back_to_back",     "a_is_back_to_back",
@@ -140,11 +140,23 @@ class PuckLineModel:
 
     def feature_importance_home(self, top_n: int = 15) -> dict:
         scores = self.home_model.get_booster().get_score(importance_type="gain")
-        return dict(sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_n])
+        return self._map_feature_scores(scores, top_n)
 
     def feature_importance_away(self, top_n: int = 15) -> dict:
         scores = self.away_model.get_booster().get_score(importance_type="gain")
-        return dict(sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_n])
+        return self._map_feature_scores(scores, top_n)
+
+    def _map_feature_scores(self, scores: dict, top_n: int) -> dict:
+        mapped_scores = {}
+        for key, value in scores.items():
+            mapped = key
+            match = re.fullmatch(r"f(\d+)", key)
+            if match and self.feature_names:
+                idx = int(match.group(1))
+                if 0 <= idx < len(self.feature_names):
+                    mapped = self.feature_names[idx]
+            mapped_scores[mapped] = value
+        return dict(sorted(mapped_scores.items(), key=lambda x: x[1], reverse=True)[:top_n])
 
     def save(self, name: str = "puckline") -> str:
         os.makedirs(SAVED_MODELS_DIR, exist_ok=True)

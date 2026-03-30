@@ -87,7 +87,10 @@ ENSEMBLE_WEIGHTS = {
 }
 
 # ─── Betting Thresholds ───────────────────────────────────────────────────────
-MIN_EDGE_PCT    = 3.0     # Minimum edge % to surface a recommendation
+MIN_EDGE_PCT             = 3.0   # Default minimum edge % (favourite ML, PL)
+MIN_EDGE_PCT_UNDERDOG_ML = 5.0   # Positive-odds ML (away underdog) — slightly higher bar
+MIN_EDGE_PCT_OU          = 5.0   # Over/under both directions
+MIN_MODEL_PROB_UNDERDOG_ML = 0.30  # Model must give underdog at least 30% win prob
 MIN_CONFIDENCE  = 45      # Out of 95
 MIN_ODDS        = -300    # Ignore massive favourites (too much juice)
 MAX_ODDS        = 400     # Ignore extreme underdogs

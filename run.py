@@ -130,14 +130,20 @@ def main():
     from features.h2h_features    import build_team_cover_stats
     from features.builder         import build_training_matrix, build_prediction_features
 
-    team_stats   = build_team_stat_features(CURRENT_SEASON, game_type)
-    goalie_feats = build_goalie_features(CURRENT_SEASON, game_type)
+    team_stats = {
+        CURRENT_SEASON: build_team_stat_features(CURRENT_SEASON, game_type),
+        PREV_SEASON: build_team_stat_features(PREV_SEASON, GAME_TYPE_REGULAR),
+    }
+    goalie_feats = {
+        CURRENT_SEASON: build_goalie_features(CURRENT_SEASON, game_type),
+        PREV_SEASON: build_goalie_features(PREV_SEASON, GAME_TYPE_REGULAR),
+    }
 
     # ── 4. Fetch Confirmed Starters ────────────────────────────────────────────
     print("\n[4/8] Fetching confirmed starting goalies...")
     from data.goalie_scraper import get_confirmed_starters
     confirmed = get_confirmed_starters(game_date, game_type)
-    goalie_feats = apply_confirmed_starters(goalie_feats, confirmed)
+    goalie_feats[CURRENT_SEASON] = apply_confirmed_starters(goalie_feats[CURRENT_SEASON], confirmed)
     n_confirmed = sum(1 for v in confirmed.values() if v.get("confirmed"))
     print(f"  {n_confirmed} confirmed starters | "
           f"{len(confirmed) - n_confirmed} estimated")
@@ -145,17 +151,13 @@ def main():
     # ── 5. Build Training Matrix ────────────────────────────────────────────────
     print("\n[5/8] Building training matrix...")
     (X_train, y_ml, y_pl_home, y_pl_away,
-     y_goals_home, y_goals_away) = build_training_matrix(
+     y_goals_home, y_goals_away, train_meta) = build_training_matrix(
         curr_results, prev_results,
         team_stats, goalie_feats,
     )
 
-    # Attach dates for time-decay weights
-    all_dated = sorted(curr_results + prev_results, key=lambda x: x.get("date", ""))
-    # Only keep games that made it into training (after MIN_GAMES filter)
-    game_dates   = pd.Series([g["date"]           for g in all_dated[:len(X_train)]])
-    game_seasons = pd.Series([g.get("game_type", GAME_TYPE_REGULAR)
-                               for g in all_dated[:len(X_train)]])
+    game_dates   = train_meta["date"]
+    game_seasons = train_meta["season"]
 
     # ── 6. Train Models ────────────────────────────────────────────────────────
     print("\n[6/8] Training / loading models...")
@@ -198,6 +200,7 @@ def main():
     X_pred = build_prediction_features(
         upcoming, curr_results, prev_results,
         confirmed, ou_lines_map, is_playoff,
+        goalie_feats=goalie_feats[CURRENT_SEASON],
     )
 
     if X_pred.empty:
@@ -230,13 +233,18 @@ def main():
     confidence_scores = []
     for i in range(len(X_pred)):
         gf = X_pred.iloc[i].to_dict()
-        hg = goalie_feats.get(
+        hg = goalie_feats.get(CURRENT_SEASON, {}).get(
             upcoming[i].get("homeTeam", {}).get("abbrev", ""), {}
+        ) if i < len(upcoming) else {}
+        ag = goalie_feats.get(CURRENT_SEASON, {}).get(
+            upcoming[i].get("awayTeam", {}).get("abbrev", ""), {}
         ) if i < len(upcoming) else {}
         comp_i = {k: float(v[i]) if hasattr(v, "__len__") else v
                   for k, v in comp.items()}
-        cs = score_game_confidence(gf, comp_i, hg, n_samples)
+        cs = score_game_confidence(gf, comp_i, hg, ag, n_samples)
         confidence_scores.append(cs)
+
+    _print_slate_diagnostics(upcoming, ensemble_probs, comp, pl_prob_home, pl_prob_away, ensemble, metrics)
 
     # Recommendations
     if not args.no_odds and ODDS_API_KEY:
@@ -246,7 +254,7 @@ def main():
             ensemble_probs, comp,
             pl_prob_home, pl_prob_away,
             mu_home, mu_away,
-            all_odds, goalie_feats, confidence_scores, n_samples,
+            all_odds, goalie_feats[CURRENT_SEASON], confidence_scores, n_samples,
         )
         # Filter by market
         if args.market != "all":
@@ -266,7 +274,7 @@ def main():
         _print_model_only(upcoming, ensemble_probs, comp,
                           pl_prob_home, pl_prob_away,
                           mu_home, mu_away, ou_lines_arr,
-                          goalie_feats, confirmed)
+                          goalie_feats[CURRENT_SEASON], confirmed)
 
     # ── Export ────────────────────────────────────────────────────────────────
     if args.export != "none":
@@ -279,7 +287,7 @@ def main():
                 ensemble_probs = ensemble_probs,
                 mu_home      = mu_home,
                 mu_away      = mu_away,
-                goalie_feats = goalie_feats,
+                goalie_feats = goalie_feats[CURRENT_SEASON],
                 game_date    = game_date,
             )
             from output.excel_writer import _conf_tier
@@ -287,6 +295,8 @@ def main():
             n_med  = sum(1 for r in recs if _conf_tier(r.model_prob, r.edge_pct) == "MEDIUM")
             print(Fore.WHITE + f"  Exported to: {path}")
             print(Fore.GREEN + f"  Picks: {n_high} HIGH | {n_med} MEDIUM confidence\n")
+            from output.export import export_csv
+            export_csv(recs)
         elif args.export == "csv":
             from output.export import export_csv
             path = export_csv(recs)
@@ -326,6 +336,76 @@ def _print_model_only(upcoming, ensemble_probs, comp,
         print(Fore.WHITE +
               f"  {game_str:<28} {ens:>5.1%} {lr:>5.1%} {xg:>5.1%} "
               f"{el:>5.1%} {plh:>5.1%} {pla:>5.1%} {exp:>4.1f}")
+    print()
+
+
+def _print_slate_diagnostics(upcoming, ensemble_probs, comp, pl_prob_home, pl_prob_away,
+                             ensemble, metrics):
+    """Print sanity checks for the current slate before recommendations."""
+    from colorama import Fore, Style
+
+    if len(ensemble_probs) == 0:
+        return
+
+    raw_probs = np.asarray(comp.get("raw_ensemble", ensemble_probs), dtype=float)
+    stds = np.asarray(comp.get("std", np.zeros_like(ensemble_probs)), dtype=float)
+
+    print(Fore.WHITE + Style.BRIGHT + "  SLATE DIAGNOSTICS")
+    print(Fore.WHITE + "  " + "-" * 71)
+    print(
+        Fore.WHITE +
+        f"  ML probs  mean {np.mean(ensemble_probs):.3f} | std {np.std(ensemble_probs):.3f} | "
+        f"min {np.min(ensemble_probs):.3f} | max {np.max(ensemble_probs):.3f}"
+    )
+    print(
+        Fore.WHITE +
+        f"  Raw ML    mean {np.mean(raw_probs):.3f} | std {np.std(raw_probs):.3f}"
+    )
+    print(
+        Fore.WHITE +
+        f"  PL home   mean {np.mean(pl_prob_home):.3f} | std {np.std(pl_prob_home):.3f} | "
+        f"away mean {np.mean(pl_prob_away):.3f} | away std {np.std(pl_prob_away):.3f}"
+    )
+
+    print(Fore.WHITE + "  Highest disagreement:")
+    ranked = sorted(
+        [
+            (
+                stds[i],
+                (g.get("awayTeam", {}) or {}).get("abbrev") or g.get("away_team", ""),
+                (g.get("homeTeam", {}) or {}).get("abbrev") or g.get("home_team", ""),
+                ensemble_probs[i],
+                comp["logistic"][i],
+                comp["xgboost"][i],
+                comp["elo"][i],
+            )
+            for i, g in enumerate(upcoming)
+            if i < len(ensemble_probs)
+        ],
+        reverse=True,
+    )
+    for std, away, home, ens, lr, xgb, elo in ranked[:5]:
+        print(
+            Fore.WHITE +
+            f"    {away} @ {home}: ens {ens:.3f} | LR {lr:.3f} | XGB {xgb:.3f} | Elo {elo:.3f} | std {std:.3f}"
+        )
+
+    logistic_top = ensemble.logistic.get_coefficients()
+    xgb_top = metrics.get("training_diagnostics", {}).get("xgboost_top_features", {})
+    if logistic_top:
+        print(Fore.WHITE + f"  Top logistic drivers: {list(logistic_top.items())[:5]}")
+    if xgb_top:
+        print(Fore.WHITE + f"  Top XGBoost drivers: {list(xgb_top.items())[:5]}")
+
+    underdog_report = metrics.get("underdog_reliability", [])
+    if underdog_report:
+        print(Fore.WHITE + "  Underdog reliability:")
+        for row in underdog_report[:6]:
+            print(
+                Fore.WHITE +
+                f"    {row['bucket']} | n={row['count']} | pred={row['avg_pred']:.3f} | "
+                f"actual={row['actual_win_rate']:.3f} | gap={row['gap']:+.3f}"
+            )
     print()
 
 

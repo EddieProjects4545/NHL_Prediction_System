@@ -24,7 +24,11 @@
       "Bash(mkdir -p outputs)",
       "Bash(mv predictions_*.xlsx season_record.xlsx results_log.csv outputs/)",
       "Bash(ls:*)",
-      "Bash(echo \"$PATH\")"
+      "Bash(echo \"$PATH\")",
+      "mcp__plugin_context-mode_context-mode__ctx_execute_file",
+      "Bash(for f:*)",
+      "Bash(do mv:*)",
+      "Bash(done)"
     ]
   }
 }

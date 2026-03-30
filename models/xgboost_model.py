@@ -5,6 +5,7 @@ Captures non-linear interactions between features that logistic regression misse
 """
 import joblib
 import os
+import re
 import numpy as np
 import pandas as pd
 from xgboost import XGBClassifier
@@ -66,7 +67,16 @@ class XGBoostModel:
     def feature_importance(self, top_n: int = 20) -> dict:
         """Return top-N features by XGBoost gain importance."""
         scores = self.model.get_booster().get_score(importance_type="gain")
-        sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        mapped_scores = {}
+        for key, value in scores.items():
+            mapped = key
+            match = re.fullmatch(r"f(\d+)", key)
+            if match and self.feature_names:
+                idx = int(match.group(1))
+                if 0 <= idx < len(self.feature_names):
+                    mapped = self.feature_names[idx]
+            mapped_scores[mapped] = value
+        sorted_scores = sorted(mapped_scores.items(), key=lambda x: x[1], reverse=True)
         return dict(sorted_scores[:top_n])
 
     def save(self, name: str = "xgboost_ml") -> str:

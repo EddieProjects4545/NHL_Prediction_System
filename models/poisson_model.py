@@ -12,9 +12,9 @@ P(under line) = 1 - P(over line) - P(exactly line, if integer)
 Key features used:
   - combined_gf_pg, combined_ga_pg
   - delta_gf_pg, delta_ga_pg
-  - combined_goalie_sv
+  - combined_save_pct_l10
+  - combined_shooting_pct_l10
   - h2h_avg_total
-  - pp_pct (high PP → more goals)
   - days_rest (fatigued teams score less)
   - is_playoff (tighter, lower-scoring games)
 """
@@ -35,23 +35,25 @@ from config import SAVED_MODELS_DIR
 TOTALS_FEATURES = [
     "combined_gf_pg", "combined_ga_pg",
     "delta_gf_pg", "delta_ga_pg",
-    "combined_goalie_sv",
-    "combined_pp_pct",
-    "h_pp_pct", "a_pp_pct",
     "h_shots_for_pg", "a_shots_for_pg",
-    "h_corsi_pct_5v5", "a_corsi_pct_5v5",
-    "h_pdo_5v5", "a_pdo_5v5",
+    "combined_shots_pg",
+    "combined_goal_diff_l10",
+    "combined_shot_diff_l10",
+    "combined_save_pct_l10",
+    "combined_shooting_pct_l10",
+    "delta_goal_diff_l10",
+    "delta_shot_diff_l10",
+    "delta_save_pct_l10",
+    "delta_shooting_pct_l10",
     "h2h_avg_total",
     "h2h_over_rate",
     "h_days_rest", "a_days_rest",
     "either_b2b",
     "is_playoff",
     "ou_line",
-    "delta_starter_save_pct",
-    "h_starter_gsax_pg", "a_starter_gsax_pg",
-    "delta_starter_l5_sv_pct",
-    "h_starter_l5_sv_pct", "a_starter_l5_sv_pct",
-    "h_starter_l5_vs_season", "a_starter_l5_vs_season",
+    "h_save_pct_l10", "a_save_pct_l10",
+    "h_shooting_pct_l10", "a_shooting_pct_l10",
+    "h_ot_rate_l10", "a_ot_rate_l10",
     "elo_diff",
 ]
 
@@ -68,6 +70,8 @@ class PoissonModel:
         ])
         self.feature_names = None
         self.is_fitted = False
+        self.calib_home = 1.0   # ratio: mean(actual_home) / mean(pred_home)
+        self.calib_away = 1.0   # ratio: mean(actual_away) / mean(pred_away)
 
     def _get_features(self, X: pd.DataFrame) -> pd.DataFrame:
         available = [f for f in TOTALS_FEATURES if f in X.columns]
@@ -84,6 +88,13 @@ class PoissonModel:
 
         self.model_home.fit(Xf.values, y_goals_home.values, **kw)
         self.model_away.fit(Xf.values, y_goals_away.values, **kw)
+
+        # Calibration: scale predictions to match training-set mean actuals
+        pred_h = np.clip(self.model_home.predict(Xf.values), 1.0, 6.0)
+        pred_a = np.clip(self.model_away.predict(Xf.values), 1.0, 6.0)
+        self.calib_home = float(y_goals_home.mean() / pred_h.mean()) if pred_h.mean() > 0 else 1.0
+        self.calib_away = float(y_goals_away.mean() / pred_a.mean()) if pred_a.mean() > 0 else 1.0
+
         self.is_fitted = True
         return self
 
@@ -92,9 +103,9 @@ class PoissonModel:
         Xf = X[self.feature_names].fillna(0)
         mu_home = self.model_home.predict(Xf.values)
         mu_away = self.model_away.predict(Xf.values)
-        # Clip to reasonable NHL range
-        mu_home = np.clip(mu_home, 1.0, 6.0)
-        mu_away = np.clip(mu_away, 1.0, 6.0)
+        # Apply calibration factor learned during fit, then clip to NHL range
+        mu_home = np.clip(mu_home * self.calib_home, 1.0, 6.0)
+        mu_away = np.clip(mu_away * self.calib_away, 1.0, 6.0)
         return mu_home, mu_away
 
     def predict_over_prob(self, X: pd.DataFrame,

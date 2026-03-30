@@ -17,7 +17,9 @@ from betting.edge_calculator import (
 )
 from betting.confidence_scorer import score_game_confidence
 from config import (
-    MIN_EDGE_PCT, MIN_CONFIDENCE, MIN_ODDS, MAX_ODDS, KELLY_FRACTION,
+    MIN_EDGE_PCT, MIN_EDGE_PCT_UNDERDOG_ML, MIN_EDGE_PCT_OU,
+    MIN_MODEL_PROB_UNDERDOG_ML,
+    MIN_CONFIDENCE, MIN_ODDS, MAX_ODDS, KELLY_FRACTION,
     TEAM_FULL_NAMES,
 )
 
@@ -85,8 +87,16 @@ class Recommendation:
 
     @property
     def rank_score(self) -> float:
-        """Primary sort key: combination of EV and confidence."""
-        return self.ev_pct * (self.confidence / 95)
+        """Primary sort key with dog-ML and disagreement penalties."""
+        confidence_factor = self.confidence / 95
+        probability_factor = 0.75 + self.model_prob
+        disagreement_penalty = max(0.55, 1.0 - (self.model_std * 4.5))
+        odds_penalty = 1.0
+
+        if self.market == "ML" and self.odds > 0:
+            odds_penalty = 1.0 / (1.0 + max(self.odds - 175, 0) / 450)
+
+        return self.ev_pct * confidence_factor * probability_factor * disagreement_penalty * odds_penalty
 
 
 def _generate_key_edges(game_feats: Dict, home: str, away: str,
@@ -176,6 +186,15 @@ def _generate_key_edges(game_feats: Dict, home: str, away: str,
     return reasons[:3]   # Cap at 3 reasons
 
 
+def _required_edge_pct(market: str, odds: int) -> float:
+    """Market-specific minimum edge floor."""
+    if market == "OU":
+        return MIN_EDGE_PCT_OU
+    if market == "ML" and odds > 0:
+        return MIN_EDGE_PCT_UNDERDOG_ML
+    return MIN_EDGE_PCT
+
+
 def generate_recommendations(
     upcoming_games: List[Dict],
     X_pred: pd.DataFrame,
@@ -217,6 +236,7 @@ def generate_recommendations(
         mu_h      = float(poisson_mu_home[i])
         mu_a      = float(poisson_mu_away[i])
         exp_total = round(mu_h + mu_a, 2)
+        projected_margin = mu_h - mu_a
 
         conf = confidence_scores[i] if i < len(confidence_scores) else {}
         game_feats = X_pred.iloc[i].to_dict() if i < len(X_pred) else {}
@@ -233,7 +253,7 @@ def generate_recommendations(
                 return
             if not (MIN_ODDS <= odds <= MAX_ODDS):
                 return
-            if edge_pct < MIN_EDGE_PCT:
+            if edge_pct < _required_edge_pct(market, odds):
                 return
             conf_val = conf.get(
                 "ml" if market == "ML" else
@@ -241,6 +261,8 @@ def generate_recommendations(
                  ("pl_away" if side == "away" else "ou")), 50
             )
             if conf_val < MIN_CONFIDENCE:
+                return
+            if market == "ML" and odds > 0 and model_prob < MIN_MODEL_PROB_UNDERDOG_ML:
                 return
 
             recs.append(Recommendation(

@@ -17,6 +17,7 @@ feeds into the confidence scorer.
 import numpy as np
 import pandas as pd
 from typing import Dict, Tuple
+from sklearn.isotonic import IsotonicRegression
 
 from models.logistic_model import LogisticModel
 from models.xgboost_model  import XGBoostModel
@@ -34,6 +35,7 @@ class EnsembleModel:
         self.xgboost  = xgboost  or XGBoostModel()
         self.elo      = elo      or EloModel()
         self.weights  = weights  or ENSEMBLE_WEIGHTS
+        self.calibrator = None
         self.is_fitted = False
 
     def fit(self, X: pd.DataFrame, y: pd.Series,
@@ -53,6 +55,17 @@ class EnsembleModel:
         self.is_fitted = True
         return self
 
+    def fit_calibrator(self, raw_probs: np.ndarray, y_val: pd.Series) -> "EnsembleModel":
+        """Fit a held-out isotonic map on ensemble probabilities."""
+        raw_probs = np.asarray(raw_probs, dtype=float)
+        y_arr = np.asarray(y_val, dtype=float)
+        if raw_probs.size == 0 or len(np.unique(raw_probs)) < 2:
+            self.calibrator = None
+            return self
+        self.calibrator = IsotonicRegression(out_of_bounds="clip")
+        self.calibrator.fit(raw_probs, y_arr)
+        return self
+
     def predict_proba(self, X: pd.DataFrame) -> Tuple[np.ndarray, Dict]:
         """
         Return (ensemble_prob_home_win, component_probs dict).
@@ -68,6 +81,9 @@ class EnsembleModel:
             w["xgboost"]  * p_xgb +
             w["elo"]       * p_elo
         )
+        raw_ensemble = p_ensemble.copy()
+        if self.calibrator is not None:
+            p_ensemble = self.calibrator.predict(raw_ensemble)
 
         # Model agreement: std across the three models
         stack = np.vstack([p_lr, p_xgb, p_elo])
@@ -77,6 +93,7 @@ class EnsembleModel:
             "logistic" : p_lr,
             "xgboost"  : p_xgb,
             "elo"       : p_elo,
+            "raw_ensemble": raw_ensemble,
             "std"       : model_std,
         }
 
